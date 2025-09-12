@@ -223,7 +223,7 @@ class LRScheduler:
                 param_group["lr"] = lr
 
         self._last_lr: list[float] = [
-            group["lr"] for group in self.optimizer.param_groups
+            float(group["lr"]) for group in self.optimizer.param_groups
         ]
 
 
@@ -1186,7 +1186,7 @@ class ChainedScheduler(LRScheduler):
         self._schedulers = schedulers
         self.optimizer = optimizer
         self._last_lr = [
-            group["lr"] for group in self._schedulers[-1].optimizer.param_groups
+            float(group["lr"]) for group in self._schedulers[-1].optimizer.param_groups
         ]
 
     def step(self) -> None:  # type: ignore[override]
@@ -1194,7 +1194,7 @@ class ChainedScheduler(LRScheduler):
         for scheduler in self._schedulers:
             scheduler.step()
         self._last_lr = [
-            group["lr"] for group in self._schedulers[-1].optimizer.param_groups
+            float(group["lr"]) for group in self._schedulers[-1].optimizer.param_groups
         ]
 
     @override
@@ -1328,7 +1328,7 @@ class ReduceLROnPlateau(LRScheduler):
         self.cooldown = cooldown
         self.eps = eps
         self.last_epoch = 0
-        self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
+        self._last_lr = [float(group["lr"]) for group in self.optimizer.param_groups]
         self._init_is_better(
             mode=mode, threshold=threshold, threshold_mode=threshold_mode
         )
@@ -1365,7 +1365,7 @@ class ReduceLROnPlateau(LRScheduler):
             self.cooldown_counter = self.cooldown
             self.num_bad_epochs = 0
 
-        self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
+        self._last_lr = [float(group["lr"]) for group in self.optimizer.param_groups]
 
     def _reduce_lr(self, epoch):
         if len(self.optimizer.param_groups) != len(self.min_lrs):
@@ -1863,7 +1863,7 @@ class CosineAnnealingWarmRestarts(LRScheduler):
             for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
                 param_group["lr"] = lr
 
-        self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
+        self._last_lr = [float(group["lr"]) for group in self.optimizer.param_groups]
 
 
 class _SchedulePhase(TypedDict):
