@@ -120,8 +120,11 @@ class LRScheduler:
                         "param 'initial_lr' is not specified "
                         f"in param_groups[{i}] when resuming an optimizer"
                     )
-        self.base_lrs: list[float] = [
-            group["initial_lr"] for group in optimizer.param_groups
+        self.base_lrs: list[float | Tensor] = [
+            group["initial_lr"].clone()
+            if isinstance(group["initial_lr"], Tensor)
+            else group["initial_lr"]
+            for group in optimizer.param_groups
         ]
         self.last_epoch = last_epoch
 
@@ -223,7 +226,7 @@ class LRScheduler:
             else:
                 self.last_epoch = epoch
                 if hasattr(self, "_get_closed_form_lr"):
-                    values = cast(list[float], self._get_closed_form_lr())
+                    values = cast(list[float | Tensor], self._get_closed_form_lr())
                 else:
                     values = self.get_lr()
 
@@ -534,7 +537,7 @@ class StepLR(LRScheduler):
             return [group["lr"] for group in self.optimizer.param_groups]
         return [group["lr"] * self.gamma for group in self.optimizer.param_groups]
 
-    def _get_closed_form_lr(self) -> list[float]:
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [
             base_lr * self.gamma ** (self.last_epoch // self.step_size)
             for base_lr in self.base_lrs
@@ -592,7 +595,7 @@ class MultiStepLR(LRScheduler):
             for group in self.optimizer.param_groups
         ]
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         milestones = sorted(self.milestones.elements())
         return [
             base_lr * self.gamma ** bisect_right(milestones, self.last_epoch)
@@ -664,7 +667,7 @@ class ConstantLR(LRScheduler):
             group["lr"] * (1.0 / self.factor) for group in self.optimizer.param_groups
         ]
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [
             base_lr
             * (self.factor + (self.last_epoch >= self.total_iters) * (1 - self.factor))
@@ -757,7 +760,7 @@ class LinearLR(LRScheduler):
             for group in self.optimizer.param_groups
         ]
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [
             base_lr
             * (
@@ -811,7 +814,7 @@ class ExponentialLR(LRScheduler):
             return [group["lr"] for group in self.optimizer.param_groups]
         return [group["lr"] * self.gamma for group in self.optimizer.param_groups]
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [base_lr * self.gamma**self.last_epoch for base_lr in self.base_lrs]
 
 
@@ -1020,7 +1023,7 @@ class PolynomialLR(LRScheduler):
         ) ** self.power
         return [group["lr"] * decay_factor for group in self.optimizer.param_groups]
 
-    def _get_closed_form_lr(self):
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [
             (
                 base_lr
@@ -1121,7 +1124,7 @@ class CosineAnnealingLR(LRScheduler):
             for group in self.optimizer.param_groups
         ]
 
-    def _get_closed_form_lr(self) -> list[float]:
+    def _get_closed_form_lr(self) -> list[float | Tensor]:
         return [
             self.eta_min
             + (base_lr - self.eta_min)

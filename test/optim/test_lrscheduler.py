@@ -2519,7 +2519,7 @@ class TestLRScheduler(TestCase):
         ],
     )
     def test_constant_initial_lr(self, LRClass):
-        # Test that the initial learning rate is constant
+        # Test that the initial learning rate is constant and that it does not alias base_lrs
         lr = torch.as_tensor(0.1)
         opt = SGD([torch.nn.Parameter(torch.randn(1))], lr=lr)
         sch = LRClass(opt)
@@ -2533,6 +2533,7 @@ class TestLRScheduler(TestCase):
             for group, ori_group in zip(opt.param_groups, ori_param_groups):
                 self.assertEqual(group["initial_lr"], ori_group["initial_lr"])
                 self.assertEqual(sch.base_lrs, [0.1])
+                self.assertIsNot(sch.base_lrs[0], group["initial_lr"])
 
     def test_constant_initial_params_cyclelr(self):
         # Test that the initial learning rate is constant
