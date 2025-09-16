@@ -1,6 +1,7 @@
 # Owner(s): ["module: optimizer", "module: LrScheduler" ]
 # ruff: noqa: F841
 import copy
+import itertools
 import math
 import pickle
 import tempfile
@@ -2417,33 +2418,34 @@ class TestLRScheduler(TestCase):
 
         self.assertLessEqual(last_lr, max_lr)
 
-    @parametrize(
-        "LRClass",
-        [
-            partial(LambdaLR, lr_lambda=lambda e: e // 10),
-            partial(MultiplicativeLR, lr_lambda=lambda: 0.95),
-            partial(StepLR, step_size=30),
-            partial(MultiStepLR, milestones=[30, 80]),
-            ConstantLR,
-            LinearLR,
-            partial(ExponentialLR, gamma=0.9),
-            PolynomialLR,
-            partial(CosineAnnealingLR, T_max=10),
-            lambda opt, **kwargs: ChainedScheduler(
-                schedulers=[ConstantLR(opt), ConstantLR(opt)], **kwargs
-            ),
-            lambda opt, **kwargs: SequentialLR(
-                opt,
-                schedulers=[ConstantLR(opt), ConstantLR(opt)],
-                milestones=[2],
-                **kwargs,
-            ),
-            ReduceLROnPlateau,
-            partial(CyclicLR, base_lr=0.01, max_lr=0.1),
-            partial(OneCycleLR, max_lr=0.01, total_steps=10, anneal_strategy="linear"),
-            partial(CosineAnnealingWarmRestarts, T_0=20),
-        ],
-    )
+    # Each item should be a callable which accepts (optimizer, **kwargs) and returns an LRScheduler
+    LR_SCHEDULER_FACTORIES = [
+        partial(LambdaLR, lr_lambda=lambda e: e // 10),
+        partial(MultiplicativeLR, lr_lambda=lambda e: 0.95),
+        partial(StepLR, step_size=30),
+        partial(MultiStepLR, milestones=[30, 80]),
+        ConstantLR,
+        LinearLR,
+        partial(ExponentialLR, gamma=0.9),
+        PolynomialLR,
+        partial(CosineAnnealingLR, T_max=10),
+        lambda opt, **kwargs: ChainedScheduler(
+            schedulers=[ConstantLR(opt), ConstantLR(opt)], **kwargs
+        ),
+        lambda opt, **kwargs: SequentialLR(
+            opt,
+            schedulers=[ConstantLR(opt), ConstantLR(opt)],
+            milestones=[2],
+            **kwargs,
+        ),
+        ReduceLROnPlateau,
+        partial(CyclicLR, base_lr=0.01, max_lr=0.1),
+        partial(OneCycleLR, max_lr=0.01, total_steps=10, anneal_strategy="linear"),
+        partial(CosineAnnealingWarmRestarts, T_0=20),
+        partial(SWALR, swa_lr=0.01),
+    ]
+
+    @parametrize("LRClass", LR_SCHEDULER_FACTORIES)
     @parametrize("weights_only", [True, False])
     def test_lr_scheduler_state_dict_load(self, LRClass, weights_only):
         scheduler = LRClass(self.opt)
@@ -2544,6 +2546,43 @@ class TestLRScheduler(TestCase):
                 self.assertEqual(group["initial_lr"], ori_group["initial_lr"])
                 self.assertEqual(sch.base_lrs, [0.1])
                 self.assertIsNot(sch.base_lrs[0], group["initial_lr"])
+
+    @parametrize("LRClass", LR_SCHEDULER_FACTORIES)
+    def test_lr_scheduler_aliasing(self, LRClass):
+        scheduler = LRClass(self.opt)
+
+        # Note that we don't include:
+        # - get_lr() (expected to alias group['lr']).
+        # - _last_lr (expected to alias get_last_lr()).
+        potential_tensors = [
+            [group["lr"] for group in self.opt.param_groups],
+            scheduler.get_last_lr(),
+        ]
+        labels = ["group['lr']", "get_last_lr()"]
+
+        if not isinstance(scheduler, ReduceLROnPlateau):
+            potential_tensors.append(
+                [group["initial_lr"] for group in self.opt.param_groups]
+            )
+            labels.append("group['initial_lr']")
+        if hasattr(scheduler, "base_lrs"):
+            potential_tensors.append(scheduler.base_lrs)
+            labels.append("base_lrs")
+        if hasattr(scheduler, "_get_closed_form_lr"):
+            potential_tensors.append(scheduler._get_closed_form_lr())
+            labels.append("_get_closed_form_lr()")
+
+        for could_be_aliased in zip(*potential_tensors):
+            tensors_and_label = filter(
+                lambda x: isinstance(x[0], torch.Tensor), zip(could_be_aliased, labels)
+            )
+
+            for a, b in itertools.combinations(tensors_and_label, r=2):
+                self.assertIsNot(
+                    a[0],
+                    b[0],
+                    f"{a[1]} and {b[1]} alias in {scheduler.__class__.__name__}",
+                )
 
     def test_constant_initial_params_cyclelr(self):
         # Test that the initial learning rate is constant
